@@ -123,6 +123,13 @@ export function ensureOpenClawAgentDisplayRowSchema(db: DatabaseSync): void {
       db.exec(AGENT_DISPLAY_ROW_SCHEMA_SQL); // sqlite-allow-raw -- Canonical additive DDL only.
     } else if (!complete) {
       db.exec(AGENT_DISPLAY_ROW_SEMANTICS_SCHEMA_SQL); // sqlite-allow-raw -- Canonical additive DDL only.
+      // Foundation rows were reduced under older semantics. Rotate and dirty
+      // them so readers cannot publish a mixed-generation projection.
+      // sqlite-allow-raw -- One-time lazy semantic migration.
+      db.prepare(
+        `UPDATE ${SESSION_TRANSCRIPT_DISPLAY_STATE_TABLE}
+         SET generation = lower(hex(randomblob(16))), needs_rebuild = 1, updated_at = ?`,
+      ).run(Date.now());
     }
     ABSENT_DATABASES.delete(db);
     FOUNDATION_ONLY_DATABASES.delete(db);

@@ -154,12 +154,46 @@ describe("agent display-row schema", () => {
       );
       database.exec(AGENT_BASE_SCHEMA_SQL);
       database.exec(OPENCLAW_AGENT_SCHEMA_SQL.slice(start, semanticsStart));
+      database.exec(`
+        INSERT INTO session_nodes
+          (session_key, current_session_id, entry_json, entry_valid, updated_at)
+        VALUES ('agent:main:upgrade', 'session-upgrade', '{}', -1, 1);
+        INSERT INTO session_windows
+          (session_id, session_key, session_scope, created_at, updated_at)
+        VALUES ('session-upgrade', 'agent:main:upgrade', 'conversation', 1, 1);
+        INSERT INTO transcript_events (session_id, seq, event_json, created_at)
+        VALUES ('session-upgrade', 0, '{"type":"session","id":"session-upgrade"}', 1);
+        INSERT INTO session_transcript_display_state
+          (session_id, generation, indexed_seq, row_count, needs_rebuild, updated_at)
+        VALUES ('session-upgrade', 'foundation-generation', 0, 1, 0, 1);
+        INSERT INTO session_transcript_display_rows
+          (session_id, row_id, row_version, revision, display_ordinal, source_event_seq, kind)
+        VALUES ('session-upgrade', 'foundation-row', 1, 1, 0, 0, 'opaque');
+      `);
       const versionBefore = database.prepare("PRAGMA user_version").get();
 
       ensureOpenClawAgentDisplayRowSchema(database);
       expect(tableExists(database, SESSION_TRANSCRIPT_DISPLAY_ROW_SOURCES_TABLE)).toBe(true);
       expect(tableExists(database, SESSION_TRANSCRIPT_DISPLAY_CANVAS_TABLE)).toBe(true);
       expect(tableExists(database, SESSION_TRANSCRIPT_DISPLAY_CARRY_TABLE)).toBe(true);
+      expect(
+        database
+          .prepare(
+            `SELECT generation, needs_rebuild
+             FROM session_transcript_display_state
+             WHERE session_id = 'session-upgrade'`,
+          )
+          .get(),
+      ).toMatchObject({ needs_rebuild: 1 });
+      expect(
+        database
+          .prepare(
+            `SELECT generation
+             FROM session_transcript_display_state
+             WHERE session_id = 'session-upgrade'`,
+          )
+          .get(),
+      ).not.toEqual({ generation: "foundation-generation" });
       expect(database.prepare("PRAGMA user_version").get()).toEqual(versionBefore);
       database.close();
       database = new DatabaseSync(databasePath);
@@ -168,10 +202,7 @@ describe("agent display-row schema", () => {
       assertSqliteSchemaContains(
         database,
         "foundation reader schema",
-        `${AGENT_BASE_SCHEMA_SQL}${OPENCLAW_AGENT_SCHEMA_SQL.slice(
-          start,
-          semanticsStart,
-        )}`,
+        `${AGENT_BASE_SCHEMA_SQL}${OPENCLAW_AGENT_SCHEMA_SQL.slice(start, semanticsStart)}`,
       );
     } finally {
       if (database.isOpen) {
