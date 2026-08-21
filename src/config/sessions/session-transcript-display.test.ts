@@ -18,11 +18,15 @@ import {
   rewriteTranscriptEventRowsExact,
   trimTranscriptForManualCompact,
 } from "./session-accessor.sqlite-transcript-write.js";
+import type { SessionTranscriptTurnMessageAppend } from "./session-accessor.types.js";
 import {
   readSessionTranscriptDisplayRowsInTransaction,
   readSessionTranscriptDisplayState,
 } from "./session-transcript-display.js";
-import { waitForSessionTranscriptIndexReconcile } from "./session-transcript-reconcile.js";
+import {
+  reconcileSessionTranscriptDisplayProjection,
+  waitForSessionTranscriptIndexReconcile,
+} from "./session-transcript-reconcile.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
@@ -41,6 +45,12 @@ type DisplayRow = {
   row_version: number;
   source_event_seq: number;
 };
+
+function withDisplayProjection(
+  messages: readonly SessionTranscriptTurnMessageAppend[],
+): SessionTranscriptTurnMessageAppend[] {
+  return messages.map((message) => ({ ...message, maintainDisplayProjection: true }));
+}
 
 describe("SQLite transcript display rows", () => {
   let stateDir: string;
@@ -136,7 +146,7 @@ describe("SQLite transcript display rows", () => {
 
   async function appendPlainPair(): Promise<void> {
     await persistSessionTranscriptTurn(scope, {
-      messages: [
+      messages: withDisplayProjection([
         {
           eventId: "user-1",
           parentId: null,
@@ -147,20 +157,44 @@ describe("SQLite transcript display rows", () => {
           parentId: "user-1",
           message: { role: "assistant", content: "hi" },
         },
-      ],
+      ]),
       touchSessionEntry: false,
     });
   }
 
+  it("keeps ordinary message appends off display maintenance until reader adoption", async () => {
+    await persistSessionTranscriptTurn(scope, {
+      messages: [{ message: { role: "user", content: "hello" } }],
+      touchSessionEntry: false,
+    });
+
+    expect(
+      database()
+        .db.prepare(
+          "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'session_transcript_display_state'",
+        )
+        .get(),
+    ).toBeUndefined();
+
+    await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId, env: scope.env });
+    expect(
+      database()
+        .db.prepare(
+          "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'session_transcript_display_state'",
+        )
+        .get(),
+    ).toBeUndefined();
+  });
+
   it("keeps generation and existing identities stable across plain appends and no-op replay", async () => {
     await persistSessionTranscriptTurn(scope, {
-      messages: [
+      messages: withDisplayProjection([
         {
           eventId: "user-1",
           parentId: null,
           message: { role: "user", content: "hello" },
         },
-      ],
+      ]),
       touchSessionEntry: false,
     });
     const firstState = readState();
@@ -177,13 +211,13 @@ describe("SQLite transcript display rows", () => {
     ]);
 
     await persistSessionTranscriptTurn(scope, {
-      messages: [
+      messages: withDisplayProjection([
         {
           eventId: "assistant-1",
           parentId: "user-1",
           message: { role: "assistant", content: "hi" },
         },
-      ],
+      ]),
       touchSessionEntry: false,
     });
     const secondState = readState();
@@ -199,13 +233,13 @@ describe("SQLite transcript display rows", () => {
     });
 
     const replay = await persistSessionTranscriptTurn(scope, {
-      messages: [
+      messages: withDisplayProjection([
         {
           eventId: "assistant-1",
           parentId: "user-1",
           message: { role: "assistant", content: "hi" },
         },
-      ],
+      ]),
       touchSessionEntry: false,
     });
     expect(replay.appendedCount).toBe(0);
@@ -237,7 +271,10 @@ describe("SQLite transcript display rows", () => {
       }),
     ).toEqual({ generation: rebuilding.generation, kind: "reset" });
 
-    await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId, env: scope.env });
+    await reconcileSessionTranscriptDisplayProjection({
+      agentId: scope.agentId,
+      env: scope.env,
+    });
 
     const ready = readState();
     const rows = readRows();
@@ -252,7 +289,7 @@ describe("SQLite transcript display rows", () => {
 
   it("returns bounded ready pages or a generation reset, never dirty rows", async () => {
     await persistSessionTranscriptTurn(scope, {
-      messages: [
+      messages: withDisplayProjection([
         { eventId: "m1", parentId: null, message: { role: "user", content: "one" } },
         {
           eventId: "m2",
@@ -260,7 +297,7 @@ describe("SQLite transcript display rows", () => {
           message: { role: "assistant", content: "two" },
         },
         { eventId: "m3", parentId: "m2", message: { role: "user", content: "three" } },
-      ],
+      ]),
       touchSessionEntry: false,
     });
     const generation = readState().generation;
@@ -334,7 +371,10 @@ describe("SQLite transcript display rows", () => {
     expect(rebuilding.generation).not.toBe(before.generation);
     expect(rebuilding.needs_rebuild).toBe(1);
 
-    await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId, env: scope.env });
+    await reconcileSessionTranscriptDisplayProjection({
+      agentId: scope.agentId,
+      env: scope.env,
+    });
     const ready = readState();
     expect(ready).toMatchObject({ indexed_seq: -1, needs_rebuild: 0, row_count: 0 });
     expect(readRows()).toEqual([]);
@@ -370,7 +410,10 @@ describe("SQLite transcript display rows", () => {
     ]);
 
     expect(readDisplayGenerationWrites()).toBe(1);
-    await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId, env: scope.env });
+    await reconcileSessionTranscriptDisplayProjection({
+      agentId: scope.agentId,
+      env: scope.env,
+    });
     expect(readState()).toMatchObject({
       indexed_seq: 2,
       needs_rebuild: 0,
@@ -411,7 +454,10 @@ describe("SQLite transcript display rows", () => {
     const rewriteGeneration = readState();
     expect(rewriteGeneration.generation).not.toBe(beforeRewrite.generation);
     expect(rewriteGeneration.needs_rebuild).toBe(1);
-    await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId, env: scope.env });
+    await reconcileSessionTranscriptDisplayProjection({
+      agentId: scope.agentId,
+      env: scope.env,
+    });
 
     const beforeCompact = readState();
     const compacted = await trimTranscriptForManualCompact(scope, (lines) => lines.slice(-2));
@@ -419,7 +465,10 @@ describe("SQLite transcript display rows", () => {
     const compactGeneration = readState();
     expect(compactGeneration.generation).not.toBe(beforeCompact.generation);
     expect(compactGeneration.needs_rebuild).toBe(1);
-    await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId, env: scope.env });
+    await reconcileSessionTranscriptDisplayProjection({
+      agentId: scope.agentId,
+      env: scope.env,
+    });
     expect(readState().needs_rebuild).toBe(0);
   });
 
@@ -495,7 +544,7 @@ describe("SQLite transcript display rows", () => {
 
       expect(readDisplayGenerationWrites()).toBe(1);
       expect(readState(importedScope.sessionId).needs_rebuild).toBe(1);
-      await waitForSessionTranscriptIndexReconcile({
+      await reconcileSessionTranscriptDisplayProjection({
         agentId: importedScope.agentId,
         env: importedScope.env,
       });
@@ -527,7 +576,7 @@ describe("SQLite transcript display rows", () => {
         },
       ].slice(0, destinationMessages);
       await persistSessionTranscriptTurn(scope, {
-        messages: destinationEvents,
+        messages: withDisplayProjection(destinationEvents),
         touchSessionEntry: false,
       });
       const before = readState();
@@ -542,13 +591,13 @@ describe("SQLite transcript display rows", () => {
       const sourceEntry = { sessionId: sourceScope.sessionId, updatedAt: 2 };
       await upsertSessionEntryCore(sourceScope, sourceEntry);
       await persistSessionTranscriptTurn(sourceScope, {
-        messages: [
+        messages: withDisplayProjection([
           {
             eventId: "source-assistant",
             parentId: null,
             message: { role: "assistant", content: "canonical source" },
           },
-        ],
+        ]),
         touchSessionEntry: false,
       });
       const sourceDatabase = openOpenClawAgentDatabase({
@@ -584,7 +633,7 @@ describe("SQLite transcript display rows", () => {
         }),
       ).toEqual({ generation: rebuilding.generation, kind: "reset" });
 
-      await waitForSessionTranscriptIndexReconcile({
+      await reconcileSessionTranscriptDisplayProjection({
         agentId: scope.agentId,
         env: scope.env,
       });

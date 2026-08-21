@@ -26,7 +26,7 @@ import {
   touchTranscriptMutationInTransaction,
 } from "./session-accessor.sqlite-transcript-state.js";
 import { appendTranscriptEventInTransaction } from "./session-accessor.sqlite-transcript-store.js";
-import { invalidateSessionTranscriptDisplayInTransaction } from "./session-transcript-display.js";
+import { invalidateExistingSessionTranscriptDisplayInTransaction } from "./session-transcript-display.js";
 import { reconcileSessionTranscriptIndexInTransaction } from "./session-transcript-index.js";
 import { startSessionTranscriptIndexReconcile } from "./session-transcript-reconcile.js";
 import type { SessionEntry } from "./types.js";
@@ -155,7 +155,7 @@ function importSqliteSessionRowsInTransaction(
       }
       transcriptEvents = exactTranscriptRows.length;
       reconcileSessionTranscriptIndexInTransaction(database.db, params.entry.sessionId);
-      invalidateSessionTranscriptDisplayInTransaction(database.db, params.entry.sessionId);
+      invalidateExistingSessionTranscriptDisplayInTransaction(database.db, params.entry.sessionId);
       publishSessionEntryCacheInvalidation(database);
     }
   } else if (prepared.transcriptEvents) {
@@ -186,7 +186,7 @@ function importSqliteSessionRowsInTransaction(
     }
     reconcileSessionTranscriptIndexInTransaction(database.db, params.entry.sessionId);
     if (transcriptEvents > 0) {
-      invalidateSessionTranscriptDisplayInTransaction(database.db, params.entry.sessionId);
+      invalidateExistingSessionTranscriptDisplayInTransaction(database.db, params.entry.sessionId);
     }
     publishSessionEntryCacheInvalidation(database);
   }
