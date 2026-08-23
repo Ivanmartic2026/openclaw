@@ -1477,6 +1477,11 @@ export class ConfigPage extends OpenClawLightDomElement {
               </div>
             </section>
           `}
+      ${configState.lastError
+        ? html`<div class="config-content-callout">
+            <div class="callout danger" role="alert">${configState.lastError}</div>
+          </div>`
+        : nothing}
       ${renderSettingsWorkspace(body)}
     `;
   }
