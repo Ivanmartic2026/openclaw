@@ -9,6 +9,7 @@ import {
   type ControlUiMockGatewayScenario,
 } from "../test-helpers/control-ui-e2e.ts";
 import { chatSessionListResponse } from "./chat-flow.test-support.ts";
+import { openChatSidePanelType } from "./chat-side-panel.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -298,6 +299,26 @@ suite.define(() => {
     await expect
       .poll(() => page.locator(".shell").getAttribute("class"))
       .not.toContain("shell--nav-collapsed");
+  });
+
+  it("keeps expanded side-panel tabs clear of web titlebar chrome", async () => {
+    const page = await openPage({ webChrome: true });
+    const toolbar = page.locator(".macos-titlebar-controls");
+    await toolbar.getByRole("button", { name: "Collapse sidebar" }).click();
+    await openChatSidePanelType(page, "Side chat");
+    const panel = page.getByRole("region", { name: "Side panel" });
+    await panel.getByRole("button", { name: "Expand side panel" }).click();
+    await panel.getByRole("button", { name: "Restore side panel" }).waitFor();
+
+    const [toolbarBox, activeTabBox] = await Promise.all([
+      toolbar.boundingBox(),
+      panel.locator(".tabstrip-tab[active]").boundingBox(),
+    ]);
+    expect(toolbarBox).not.toBeNull();
+    expect(activeTabBox).not.toBeNull();
+    expect(activeTabBox?.x ?? 0).toBeGreaterThanOrEqual(
+      (toolbarBox?.x ?? 0) + (toolbarBox?.width ?? 0) + 4,
+    );
   });
 
   it("keeps only history controls in the Settings titlebar", async () => {

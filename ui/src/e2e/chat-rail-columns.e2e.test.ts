@@ -16,7 +16,8 @@ const suite = createControlUiE2eSuite({
 });
 
 const sessionKey = "agent:main:rail-tabs";
-const proofDir = process.env.OPENCLAW_UI_RAIL_PROOF_DIR?.trim();
+const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
+const proofDir = path.join(process.cwd(), ".artifacts", "control-ui-e2e", "chat-rail-columns");
 
 const historyMessages = Array.from({ length: 10 }, (_, index) => ({
   id: `rail-tabs-${index}`,
@@ -263,8 +264,50 @@ async function expectExpandedSidePanelFillsRegion(page: Page): Promise<void> {
   }
 }
 
+async function expectPanelHeaderControlsClearShellChrome(page: Page): Promise<void> {
+  const shellControls = page.locator(
+    ":is(.shell-chrome-controls, .macos-titlebar-controls) button:visible, .scope-upgrade-shell-status:visible",
+  );
+  const panelControls = sidePanel(page).locator(
+    ":scope > .side-panel__header :is(button, wa-tab):visible",
+  );
+  const [shellCount, panelCount] = await Promise.all([
+    shellControls.count(),
+    panelControls.count(),
+  ]);
+  expect(shellCount).toBeGreaterThan(0);
+  expect(panelCount).toBeGreaterThan(0);
+
+  const shellBoxes = await Promise.all(
+    Array.from({ length: shellCount }, (_, index) => shellControls.nth(index).boundingBox()),
+  );
+  const panelBoxes = await Promise.all(
+    Array.from({ length: panelCount }, (_, index) => panelControls.nth(index).boundingBox()),
+  );
+  const overlaps = shellBoxes.flatMap((shell, shellIndex) =>
+    panelBoxes.flatMap((panel, panelIndex) => {
+      if (
+        !shell ||
+        !panel ||
+        shell.width <= 0 ||
+        shell.height <= 0 ||
+        panel.width <= 0 ||
+        panel.height <= 0
+      ) {
+        return [];
+      }
+      const overlapX =
+        Math.min(shell.x + shell.width, panel.x + panel.width) - Math.max(shell.x, panel.x);
+      const overlapY =
+        Math.min(shell.y + shell.height, panel.y + panel.height) - Math.max(shell.y, panel.y);
+      return overlapX > 0.5 && overlapY > 0.5 ? [{ panelIndex, shellIndex }] : [];
+    }),
+  );
+  expect(overlaps).toEqual([]);
+}
+
 async function captureRichPanel(page: Page, name: string) {
-  if (!proofDir) {
+  if (!captureUiProof) {
     return;
   }
   await mkdir(proofDir, { recursive: true });
@@ -756,7 +799,12 @@ suite.define(() => {
             )
             .toBe("none");
           await expectExpandedSidePanelFillsRegion(page);
+          await expectPanelHeaderControlsClearShellChrome(page);
           await captureRichPanel(page, `rails-tabs-expanded-${themeMode}`);
+          await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+          await expectPanelHeaderControlsClearShellChrome(page);
+          await captureRichPanel(page, `rails-tabs-expanded-nav-collapsed-${themeMode}`);
+          await page.getByRole("button", { name: "Expand sidebar", exact: true }).click();
           await sidePanel(page).getByRole("button", { name: "Restore side panel" }).click();
 
           await sidePanel(page).getByRole("button", { name: "Close", exact: true }).click();
