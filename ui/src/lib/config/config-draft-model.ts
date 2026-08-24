@@ -418,6 +418,7 @@ function resetStaleAutoSaveStatus(state: RuntimeConfigState) {
   }
   if (!state.configFormDirty && state.configAutoSaveStatus === "error") {
     state.lastError = null;
+    state.lastErrorSource = null;
   }
   state.configAutoSaveStatus = "idle";
 }
@@ -486,6 +487,7 @@ function mutateConfigForm(
       // resolve the raw buffer first; the raw draft stays authoritative.
       state.configAutoSaveStatus = "error";
       state.lastError = t("configView.rawDraftBlocksFormEdit");
+      state.lastErrorSource = "mutation";
       return;
     }
     base = parsedRawDraft;

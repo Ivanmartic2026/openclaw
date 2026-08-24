@@ -33,6 +33,7 @@ import {
   isCurrentConfigConnection,
   nextRequestVersion,
   resolveEditableSnapshotConfig,
+  setConfigError,
   type RuntimeConfigGateway,
   type RuntimeConfigState,
 } from "./config-state-model.ts";
@@ -84,17 +85,8 @@ export function createConfigWriteCoordinator({
   let lastFlightSubmittedRaw: string | null = null;
   let lastFlightAckHash: string | null = null;
   let manualSubmitInFlight: Promise<unknown> | null = null;
-  // A write interrupted by a connection change may or may not have committed;
-  // remembered across the disconnect so the reconnect can reconcile against a
-  // fresh snapshot before autosave resumes.
-  let hasInterruptedWrite = false;
-  let interruptedWriteRaw: string | null = null;
-  // Blocks trailing autosaves while a discard drains pending writes; the
-  // drained draft is about to be thrown away, not re-written.
+  let [hasInterruptedWrite, interruptedWriteRaw]: [boolean, string | null] = [false, null];
   let suppressAutoSave = false;
-  // Wakes drains awaiting a request a connection change just orphaned — that
-  // request may never settle, and a drain stuck on it would wedge the app
-  // updater barrier, applies, and discards until then.
   let connectionWake: (() => void) | null = null;
   let connectionWakePromise: Promise<void> = Promise.resolve();
   const armConnectionWake = () => {
@@ -103,19 +95,14 @@ export function createConfigWriteCoordinator({
     });
   };
   armConnectionWake();
-  // App-updater interlock: config writes or gateway restarts mid-update can
-  // corrupt the install, so all writes pause until the updater settles.
   let writesSuspended = false;
   let writesResumed: (() => void) | null = null;
   let writesResumedPromise: Promise<void> = Promise.resolve();
-  // Submission info of the pending manual SAVE (applies never register:
-  // a post-apply write is meaningless while the gateway restarts, so the
-  // teardown flush fail-closes on them).
   let manualFlightInfo: { raw: string; ackHash: string | null } | null = null;
   const canDispatchConfigMutation = (method: ConfigMethod): boolean => {
     const allowed = canCallConfigMethod(method);
     if (!allowed && state.connected) {
-      state.lastError = t("configView.adminRequired");
+      setConfigError(state, t("configView.adminRequired"), "mutation");
       publish();
     }
     return allowed;
@@ -534,7 +521,7 @@ export function createConfigWriteCoordinator({
         try {
           const resolved = resolveOptions();
           if ("error" in resolved) {
-            state.lastError = resolved.error;
+            setConfigError(state, resolved.error, "mutation");
             return false;
           }
           return await patchConfig(state, resolved.options, async (ack, snapshotAtDispatch) => {
@@ -619,7 +606,7 @@ export function createConfigWriteCoordinator({
         // connected reload clears conflict (same invariant as elsewhere).
         if (state.configAutoSaveStatus !== "conflict") {
           state.configAutoSaveStatus = "idle";
-          state.lastError = null;
+          setConfigError(state, null, null);
         }
       });
       clearAutoSaveDraftConnection();
@@ -689,7 +676,7 @@ export function createConfigWriteCoordinator({
               // write unreviewed raw text, so refuse and point at the Raw editor.
               if (state.configFormDirty && state.configFormMode === "raw") {
                 state.configAutoSaveStatus = "error";
-                state.lastError = t("configView.rawDraftBlocksApply");
+                setConfigError(state, t("configView.rawDraftBlocksApply"), "mutation");
                 reconcileAppliedRefresh();
                 return false;
               }

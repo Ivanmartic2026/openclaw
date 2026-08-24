@@ -278,6 +278,7 @@ suite.define(() => {
           `models.providers.${providerId}.models.#4.name`,
         );
         expect(await status.textContent()).toContain("Save failed");
+        expect(await page.locator(".config-content-callout [role='alert']").count()).toBe(0);
         expect(issue.path).toBe(`models.providers.${providerId}.models.3.name`);
         expect(rejection.message).toContain(".3.name");
 

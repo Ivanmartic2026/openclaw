@@ -39,6 +39,7 @@ describe("config gateway operations", () => {
     await runtimeConfig.openFile();
     expect(writeText).toHaveBeenCalledWith("/tmp/openclaw.json");
     expect(runtimeConfig.state.lastError).toContain("File path copied to clipboard");
+    expect(runtimeConfig.state.lastErrorSource).toBe("open-file");
     runtimeConfig.dispose();
   });
 

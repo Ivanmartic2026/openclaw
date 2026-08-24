@@ -234,6 +234,7 @@ export async function loadConfig(
   const version = nextRequestVersion(state, "config");
   state.configLoading = true;
   state.lastError = null;
+  state.lastErrorSource = null;
   state.chatError = null;
   try {
     const res = await client.request<ConfigSnapshot>("config.get", {});
@@ -245,6 +246,7 @@ export async function loadConfig(
   } catch (err) {
     if (isCurrentRequest(state, "config", version, client, connectionEpoch)) {
       state.lastError = formatUiError(err);
+      state.lastErrorSource = "load";
     }
     return false;
   } finally {
@@ -274,6 +276,7 @@ export async function loadConfigSchema(state: RuntimeConfigState) {
   } catch (err) {
     if (isCurrentRequest(state, "schema", version, client, connectionEpoch)) {
       state.lastError = formatUiError(err);
+      state.lastErrorSource = "schema";
     }
   } finally {
     if (isCurrentRequest(state, "schema", version, client, connectionEpoch)) {
@@ -309,6 +312,7 @@ async function submitConfigChange(
   // state while a JSON5 original parse settles; finally releases it.
   state[busyKey] = true;
   state.lastError = null;
+  state.lastErrorSource = null;
   state.chatError = null;
   let submittedFormRaw: string | null = null;
   try {
@@ -326,6 +330,10 @@ async function submitConfigChange(
     const baseHash = state.configDraftBaseHash ?? state.configSnapshot?.hash;
     if (!baseHash) {
       state.lastError = "Config hash missing; reload and retry.";
+      state.lastErrorSource = method === "config.set" ? "save" : "mutation";
+      if (method === "config.set") {
+        state.configAutoSaveStatus = "error";
+      }
       return false;
     }
     if (!isCurrent() || !canDispatch()) {
@@ -382,6 +390,7 @@ async function submitConfigChange(
   } catch (err) {
     if (isCurrent()) {
       state.lastError = formatConfigMutationError(err, submittedFormRaw);
+      state.lastErrorSource = method === "config.set" ? "save" : "mutation";
       if (isConfigBaseHashConflictError(err)) {
         // Applies conflict the same way saves do so the UI offers Reload.
         state.configAutoSaveStatus = "conflict";
@@ -453,6 +462,7 @@ export async function autoSaveConfig(
   if (!baseHash) {
     state.configAutoSaveStatus = "error";
     state.lastError = "Config hash missing; reload and retry.";
+    state.lastErrorSource = "save";
     return false;
   }
   if (!isCurrent() || !canDispatch()) {
@@ -460,6 +470,7 @@ export async function autoSaveConfig(
   }
   state.configAutoSaveStatus = "saving";
   state.lastError = null;
+  state.lastErrorSource = null;
   state.chatError = null;
   try {
     const ack = await client.request("config.set", { raw: submittedRaw, baseHash });
@@ -502,6 +513,7 @@ export async function autoSaveConfig(
   } catch (err) {
     if (isCurrent()) {
       state.lastError = formatConfigMutationError(err, submittedRaw);
+      state.lastErrorSource = "save";
       state.configAutoSaveStatus = isConfigBaseHashConflictError(err) ? "conflict" : "error";
     }
     return false;
@@ -546,12 +558,14 @@ export async function patchConfig(
   const baseHash = currentSnapshot.hash;
   if (!baseHash) {
     state.lastError = "Config hash missing; refresh and retry.";
+    state.lastErrorSource = "mutation";
     return false;
   }
   if (options.canDispatch && !options.canDispatch()) {
     return false;
   }
   state.lastError = null;
+  state.lastErrorSource = null;
   state.chatError = null;
   try {
     const ack = await client.request<ConfigPatchAck>("config.patch", {
@@ -581,6 +595,7 @@ export async function patchConfig(
   } catch (err) {
     if (isCurrentConfigConnection(state, client, connectionEpoch)) {
       state.lastError = formatUiError(err);
+      state.lastErrorSource = "mutation";
     }
     return false;
   }
@@ -638,6 +653,7 @@ export async function openConfigFile(state: RuntimeConfigState): Promise<void> {
   const connectionEpoch = currentConfigConnectionEpoch(state);
   const isCurrent = () => isCurrentConfigConnection(state, client, connectionEpoch);
   state.lastError = null;
+  state.lastErrorSource = null;
   state.chatError = null;
   const publishFailure = async (error: string, path?: string | null) => {
     if (!isCurrent()) {
@@ -651,6 +667,7 @@ export async function openConfigFile(state: RuntimeConfigState): Promise<void> {
     }
     if (isCurrent()) {
       state.lastError = formatUiExternalText(message);
+      state.lastErrorSource = "open-file";
     }
   };
   try {

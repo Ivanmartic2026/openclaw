@@ -8,6 +8,7 @@ import type { ApplicationGatewayPhase } from "../../app/gateway.ts";
 import { normalizeAgentId } from "../sessions/session-key.ts";
 
 export type ConfigAutoSaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "paused";
+type ConfigErrorSource = "load" | "mutation" | "open-file" | "save" | "schema";
 export type RuntimeConfigState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -38,6 +39,7 @@ export type RuntimeConfigState = {
   configActiveSection: string | null;
   configActiveSubsection: string | null;
   lastError: string | null;
+  lastErrorSource: ConfigErrorSource | null;
   chatError?: string | null;
 };
 
@@ -104,7 +106,17 @@ export function createInitialConfigState(
     configActiveSection: null,
     configActiveSubsection: null,
     lastError: null,
+    lastErrorSource: null,
   };
+}
+
+export function setConfigError(
+  state: RuntimeConfigState,
+  error: string | null,
+  source: ConfigErrorSource | null,
+): void {
+  state.lastError = error;
+  state.lastErrorSource = source;
 }
 
 export function nextRequestVersion(state: RuntimeConfigState, key: "config" | "schema"): number {
