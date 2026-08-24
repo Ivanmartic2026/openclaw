@@ -1,22 +1,39 @@
 import { html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
+import { styleMap } from "lit/directives/style-map.js";
+import { icons } from "../components/icons.ts";
 import { t } from "../i18n/index.ts";
 import { OpenClawLightDomContentsElement } from "../lit/openclaw-element.ts";
 import { formatUiExternalText } from "./format-error.ts";
-import { areUiSessionKeysEquivalent } from "./sessions/session-key.ts";
+import { areUiSessionKeysEquivalent, normalizeAgentId } from "./sessions/session-key.ts";
 
-type ToastDismissReason = "action" | "dismiss" | "disconnected" | "replaced" | "timeout";
+type ToastDismissReason =
+  | "action"
+  | "dismiss"
+  | "disconnected"
+  | "replaced"
+  | "saturated"
+  | "timeout";
 type ToastVariant = "danger" | "info" | "success" | "warning";
+
+export type ToastSessionScope = {
+  kind: "session";
+  sessionKey: string;
+  agentId: string;
+  presentationId: string;
+};
 
 export type ToastOptions = {
   /** A template lets a message name a destination the operator can actually open,
    * instead of spelling out a settings path the toast then makes them find. */
   message: string | TemplateResult;
-  // Composer-owned notices intentionally retain the existing neutral single-slot
-  // presentation by omitting both fields; migrated global/session outcomes set both.
+  /** Positions a compact toast at the top center of the owning surface. */
+  anchor?: Element;
+  anchorTopOffset?: number;
+  icon?: TemplateResult;
   key?: string;
   variant?: ToastVariant;
-  scope?: { kind: "session"; sessionKey: string };
+  scope?: ToastSessionScope;
   actionLabel?: string;
   onAction?: () => void;
   onDismiss?: (reason: ToastDismissReason) => void;
@@ -25,7 +42,14 @@ export type ToastOptions = {
 
 const DEFAULT_TOAST_DURATION_MS = 6_000;
 const TOAST_EXIT_DURATION_MS = 150;
+const TOAST_EXIT_FALLBACK_MS = 450;
 const TOAST_QUEUE_LIMIT = 3;
+const TOAST_PRIORITY: Record<ToastVariant, number> = {
+  success: 0,
+  info: 1,
+  warning: 2,
+  danger: 3,
+};
 
 type ToastEntry = ToastOptions & {
   deadline: number;
@@ -41,152 +65,234 @@ function activeModalToastLayer() {
   );
 }
 
-// Outcomes reported during startup can race the shell that owns the host.
-// Apply the same bounded queue and key replacement before that host connects.
+function prefersReducedMotion(): boolean {
+  return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+function toastPriority(toast: Pick<ToastOptions, "actionLabel" | "onAction" | "variant">): number {
+  const severity = toast.variant ? TOAST_PRIORITY[toast.variant] : 0;
+  return severity * 2 + Number(Boolean(toast.actionLabel && toast.onAction));
+}
+
+function sameToastKey(left: ToastOptions, right: ToastOptions): boolean {
+  if (!left.key || left.key !== right.key) {
+    return false;
+  }
+  if (!left.scope || !right.scope) {
+    return left.scope === right.scope;
+  }
+  return (
+    left.scope.presentationId === right.scope.presentationId &&
+    normalizeAgentId(left.scope.agentId) === normalizeAgentId(right.scope.agentId) &&
+    areUiSessionKeysEquivalent(left.scope.sessionKey, right.scope.sessionKey)
+  );
+}
+
+function selectSaturationVictim<T extends ToastOptions>(
+  active: T[],
+  incoming: ToastOptions,
+): T | null {
+  const candidate = active.toSorted((left, right) => toastPriority(left) - toastPriority(right))[0];
+  return candidate && toastPriority(incoming) >= toastPriority(candidate) ? candidate : null;
+}
+
+// Startup outcomes can race the shell host. Admission applies the same replacement
+// and priority policy as the connected host so startup cannot silently reorder it.
 let queuedToasts: ToastOptions[] = [];
 const sessionToastHosts = new Set<OpenClawSessionToastHost>();
 
 abstract class OpenClawToastStackHost extends OpenClawLightDomContentsElement {
   @state() private toasts: ToastEntry[] = [];
   private readonly dismissTimers = new Map<number, ReturnType<typeof globalThis.setTimeout>>();
+  private readonly exitTimers = new Map<number, ReturnType<typeof globalThis.setTimeout>>();
   protected abstract readonly stackKind: "global" | "session";
 
   protected dismissAll(reason: ToastDismissReason) {
     for (const toast of this.toasts) {
-      this.finishDismiss(toast, reason);
+      this.settle(toast, reason, false);
     }
-    this.toasts = [];
   }
 
-  show(options: ToastOptions) {
+  show(options: ToastOptions): boolean {
     if (!options.variant) {
       for (const legacyToast of this.toasts.filter((candidate) => !candidate.variant)) {
-        this.finishDismiss(legacyToast, "replaced");
+        if (legacyToast.exiting) {
+          this.removeToast(legacyToast);
+        } else {
+          this.settle(legacyToast, "replaced", false);
+        }
       }
-      this.toasts = this.toasts.filter((toast) => toast.variant);
     }
-    const duplicate = options.key
-      ? this.toasts.find((toast) => !toast.exiting && toast.key === options.key)
-      : undefined;
+
+    const duplicate = this.toasts.find((toast) => !toast.exiting && sameToastKey(toast, options));
+    if (duplicate) {
+      this.settle(duplicate, "replaced", false);
+    } else if (options.variant) {
+      const active = this.toasts.filter((toast) => !toast.exiting && toast.variant);
+      if (active.length >= TOAST_QUEUE_LIMIT) {
+        const victim = selectSaturationVictim(active, options);
+        if (!victim) {
+          options.onDismiss?.("saturated");
+          return false;
+        }
+        this.settle(victim, "saturated", false);
+      }
+    }
+
     const durationMs = options.durationMs ?? DEFAULT_TOAST_DURATION_MS;
-    const entry = {
+    const entry: ToastEntry = {
       ...options,
       deadline: Date.now() + durationMs,
       id: ++nextToastId,
       exiting: false,
     };
-    if (duplicate) {
-      this.finishDismiss(duplicate, "replaced");
-      this.toasts = this.toasts.map((toast) => (toast === duplicate ? entry : toast));
-    } else {
-      const active = this.toasts.filter((toast) => !toast.exiting && toast.variant);
-      if (active.length >= TOAST_QUEUE_LIMIT) {
-        const oldest = active[0]!;
-        this.finishDismiss(oldest, "replaced");
-        this.toasts = this.toasts.filter((toast) => toast !== oldest);
-      }
-      this.toasts = [...this.toasts, entry];
-    }
+    this.toasts = [...this.toasts, entry];
     this.dismissTimers.set(
       entry.id,
-      globalThis.setTimeout(() => this.dismiss(entry, "timeout"), durationMs),
+      globalThis.setTimeout(() => this.settle(entry, "timeout", true), durationMs),
     );
+    return true;
   }
 
   protected takeActiveToasts(): ToastOptions[] {
     const now = Date.now();
     const active = this.toasts.filter((toast) => !toast.exiting);
     for (const toast of active) {
-      this.clearDismissTimer(toast);
+      this.clearTimers(toast);
     }
-    this.toasts = [];
+    this.toasts = this.toasts.filter((toast) => toast.exiting);
     return active.map(({ deadline, exiting: _exiting, id: _id, ...toast }) =>
       Object.assign(toast, { durationMs: Math.max(0, deadline - now) }),
     );
   }
 
-  private clearDismissTimer(toast: ToastEntry) {
-    const timer = this.dismissTimers.get(toast.id);
-    if (timer !== undefined) {
-      globalThis.clearTimeout(timer);
+  private clearTimers(toast: ToastEntry) {
+    const dismissTimer = this.dismissTimers.get(toast.id);
+    if (dismissTimer !== undefined) {
+      globalThis.clearTimeout(dismissTimer);
       this.dismissTimers.delete(toast.id);
     }
-  }
-
-  private finishDismiss(toast: ToastEntry, reason: ToastDismissReason) {
-    this.clearDismissTimer(toast);
-    toast.onDismiss?.(reason);
-  }
-
-  private dismiss(toast: ToastEntry, reason: ToastDismissReason) {
-    if (toast.exiting || !this.toasts.includes(toast)) {
-      return;
+    const exitTimer = this.exitTimers.get(toast.id);
+    if (exitTimer !== undefined) {
+      globalThis.clearTimeout(exitTimer);
+      this.exitTimers.delete(toast.id);
     }
-    this.finishDismiss(toast, reason);
-    this.toasts = this.toasts.map((candidate) =>
-      candidate === toast ? { ...candidate, exiting: true } : candidate,
+  }
+
+  private removeToast(toast: ToastEntry) {
+    this.clearTimers(toast);
+    this.toasts = this.toasts.filter((candidate) => candidate.id !== toast.id);
+  }
+
+  private settle(toast: ToastEntry, reason: ToastDismissReason, animate: boolean): boolean {
+    const current = this.toasts.find((candidate) => candidate.id === toast.id);
+    if (!current || current.exiting) {
+      return false;
+    }
+
+    this.clearTimers(current);
+    const canAnimate = current.variant || current.anchor?.isConnected === true;
+    if (!animate || !canAnimate || prefersReducedMotion() || !this.isConnected) {
+      this.removeToast(current);
+      current.onDismiss?.(reason);
+      return true;
+    }
+
+    current.exiting = true;
+    current.onAction = undefined;
+    this.toasts = [...this.toasts];
+    const anchored = current.anchor?.isConnected === true;
+    const exitDuration = anchored ? TOAST_EXIT_FALLBACK_MS : TOAST_EXIT_DURATION_MS;
+    this.exitTimers.set(
+      current.id,
+      globalThis.setTimeout(() => this.removeToast(current), exitDuration),
     );
-    globalThis.setTimeout(() => {
-      this.toasts = this.toasts.filter((candidate) => candidate.id !== toast.id);
-    }, TOAST_EXIT_DURATION_MS);
+    current.onDismiss?.(reason);
+    return true;
+  }
+
+  private invokeAction(toast: ToastEntry) {
+    const action = toast.onAction;
+    if (action && this.settle(toast, "action", false)) {
+      action();
+    }
+  }
+
+  private renderToast(toast: ToastEntry, kind: "global" | "legacy" | "session") {
+    const anchorRect = toast.anchor?.isConnected ? toast.anchor.getBoundingClientRect() : null;
+    const anchored = anchorRect !== null && anchorRect.width > 0;
+    const assertive = toast.variant === "warning" || toast.variant === "danger";
+    return html`
+      <div
+        class="app-toast app-toast--${kind}${toast.variant
+          ? ` app-toast--${toast.variant}`
+          : ""}${anchored ? " app-toast--anchored" : ""}"
+        data-toast-key=${toast.key ?? toast.id}
+        data-state=${toast.exiting ? "exiting" : "open"}
+        data-active=${toast.exiting ? "false" : "true"}
+        style=${styleMap(
+          anchored
+            ? {
+                "--app-toast-anchor-center": `${anchorRect.left + anchorRect.width / 2}px`,
+                "--app-toast-anchor-top": `${anchorRect.top + (toast.anchorTopOffset ?? 0)}px`,
+                "--app-toast-anchor-width": `${anchorRect.width}px`,
+              }
+            : {},
+        )}
+        role=${assertive ? "alert" : "status"}
+        aria-live=${assertive ? "assertive" : "polite"}
+        aria-atomic="true"
+        aria-hidden=${toast.exiting ? "true" : "false"}
+        ?inert=${toast.exiting}
+        @transitionend=${(event: TransitionEvent) => {
+          if (
+            event.target === event.currentTarget &&
+            event.propertyName === "opacity" &&
+            toast.exiting
+          ) {
+            this.removeToast(toast);
+          }
+        }}
+      >
+        ${toast.icon
+          ? html`<span class="app-toast__icon" aria-hidden="true">${toast.icon}</span>`
+          : toast.variant
+            ? html`<span class="app-toast__indicator" aria-hidden="true"></span>`
+            : nothing}
+        <span class="app-toast__message"
+          >${typeof toast.message === "string"
+            ? formatUiExternalText(toast.message)
+            : toast.message}</span
+        >
+        ${toast.actionLabel && toast.onAction
+          ? html`<button
+              type="button"
+              class="app-toast__action"
+              @click=${() => this.invokeAction(toast)}
+            >
+              ${toast.actionLabel}
+            </button>`
+          : nothing}
+        <button
+          type="button"
+          class="app-toast__dismiss"
+          aria-label=${t("common.dismiss")}
+          @click=${() => this.settle(toast, "dismiss", true)}
+        >
+          ${icons.x}
+        </button>
+      </div>
+    `;
   }
 
   override render() {
-    if (this.toasts.length === 0) {
-      return nothing;
-    }
     const modern = this.toasts.filter((toast) => toast.variant);
     const legacy = this.toasts.filter((toast) => !toast.variant);
     const renderStack = (toasts: ToastEntry[], kind: "global" | "legacy" | "session") =>
       toasts.length === 0
         ? nothing
         : html`<div class="app-toast-stack app-toast-stack--${kind}">
-            ${toasts.map((toast) => {
-              const assertive = toast.variant === "warning" || toast.variant === "danger";
-              return html`
-                <div
-                  class="app-toast app-toast--${kind}${toast.variant
-                    ? ` app-toast--${toast.variant}`
-                    : ""}"
-                  data-toast-key=${toast.key ?? toast.id}
-                  data-state=${toast.exiting ? "exiting" : "open"}
-                  role=${assertive ? "alert" : "status"}
-                  aria-live=${assertive ? "assertive" : "polite"}
-                  aria-atomic="true"
-                >
-                  ${toast.variant
-                    ? html`<span class="app-toast__indicator" aria-hidden="true"></span>`
-                    : nothing}
-                  <span class="app-toast__message"
-                    >${typeof toast.message === "string"
-                      ? formatUiExternalText(toast.message)
-                      : toast.message}</span
-                  >
-                  ${toast.actionLabel && toast.onAction
-                    ? html`
-                        <button
-                          type="button"
-                          class="app-toast__action"
-                          @click=${() => {
-                            this.dismiss(toast, "action");
-                            toast.onAction?.();
-                          }}
-                        >
-                          ${toast.actionLabel}
-                        </button>
-                      `
-                    : nothing}
-                  <button
-                    type="button"
-                    class="app-toast__dismiss"
-                    aria-label=${t("common.dismiss")}
-                    @click=${() => this.dismiss(toast, "dismiss")}
-                  >
-                    ×
-                  </button>
-                </div>
-              `;
-            })}
+            ${toasts.map((toast) => this.renderToast(toast, kind))}
           </div>`;
     return html`${renderStack(modern, this.stackKind)}${renderStack(legacy, "legacy")}`;
   }
@@ -214,71 +320,122 @@ class OpenClawToastHost extends OpenClawToastStackHost {
     super.disconnectedCallback();
   }
 
-  /** Keep the active outcome intact while moveBefore() crosses top-layer owners. */
+  /** Keep active outcomes intact while moveBefore() crosses top-layer owners. */
   connectedMoveCallback() {}
 }
 
 class OpenClawSessionToastHost extends OpenClawToastStackHost {
   protected readonly stackKind = "session";
   @property({ attribute: false }) sessionKey = "";
+  @property({ attribute: false }) agentId = "";
+  @property({ attribute: false }) presentationId = "";
   @property({ attribute: false }) presented = false;
   @property({ attribute: false }) active = false;
+  private committedScope: ToastSessionScope | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
-    sessionToastHosts.add(this);
+    if (this.hasUpdated) {
+      sessionToastHosts.add(this);
+    }
   }
 
   override disconnectedCallback() {
     sessionToastHosts.delete(this);
-    this.dismissAll("disconnected");
+    this.handoffActiveToasts();
     super.disconnectedCallback();
   }
 
   protected override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
-    if (changedProperties.has("presented") && !this.presented) {
-      for (const toast of this.takeActiveToasts()) {
-        presentGlobalToast(toast);
+    const identityCommitted = sessionToastHosts.has(this);
+    const identityChanged =
+      changedProperties.has("sessionKey") ||
+      changedProperties.has("agentId") ||
+      changedProperties.has("presentationId");
+    if (
+      identityCommitted &&
+      ((changedProperties.has("presented") && !this.presented) || identityChanged)
+    ) {
+      this.handoffActiveToasts();
+    }
+    this.committedScope = {
+      kind: "session",
+      sessionKey: this.sessionKey,
+      agentId: this.agentId,
+      presentationId: this.presentationId,
+    };
+    sessionToastHosts.add(this);
+  }
+
+  matchesScope(scope: ToastSessionScope): boolean {
+    const committed = this.committedScope;
+    return (
+      committed !== null &&
+      committed.presentationId === scope.presentationId &&
+      normalizeAgentId(committed.agentId) === normalizeAgentId(scope.agentId) &&
+      areUiSessionKeysEquivalent(committed.sessionKey, scope.sessionKey)
+    );
+  }
+
+  private handoffActiveToasts() {
+    for (const toast of this.takeActiveToasts()) {
+      const globalHost = document.querySelector<OpenClawToastHost>("openclaw-toast-host");
+      if (globalHost) {
+        globalHost.show(toast);
+      } else {
+        toast.onDismiss?.("disconnected");
       }
     }
-    if (this.exitTimer !== null) {
-      globalThis.clearTimeout(this.exitTimer);
-      this.exitTimer = null;
-    }
-  }
-
-  private finishDismiss(reason: ToastDismissReason) {
-    const toast = this.toast;
-    this.clearDismissTimer();
-    this.active = false;
-    this.exitReason = null;
-    this.toast = null;
-    toast?.onDismiss?.(reason);
   }
 }
 
-function matchingSessionToastHost(sessionKey: string): OpenClawSessionToastHost | undefined {
-  return [...sessionToastHosts]
-    .filter(
-      (host) =>
-        host.presented &&
-        host.isConnected &&
-        areUiSessionKeysEquivalent(host.sessionKey, sessionKey),
-    )
-    .toSorted((left, right) => Number(right.active) - Number(left.active))[0];
+function matchingSessionToastHost(scope: ToastSessionScope): OpenClawSessionToastHost | undefined {
+  return [...sessionToastHosts].find(
+    (host) => host.presented && host.isConnected && host.matchesScope(scope),
+  );
 }
 
-export function renderSessionToastHost(params: {
-  sessionKey: string;
-  presented: boolean;
-  active: boolean;
-}) {
+export function renderSessionToastHost(
+  params: Omit<ToastSessionScope, "kind"> & {
+    presented: boolean;
+    active: boolean;
+  },
+) {
   return html`<openclaw-session-toast-host
     .sessionKey=${params.sessionKey}
+    .agentId=${params.agentId}
+    .presentationId=${params.presentationId}
     .presented=${params.presented}
     .active=${params.active}
   ></openclaw-session-toast-host>`;
+}
+
+function queueToast(options: ToastOptions): void {
+  if (!options.variant) {
+    for (const toast of queuedToasts.filter((candidate) => !candidate.variant)) {
+      toast.onDismiss?.("replaced");
+    }
+    queuedToasts = queuedToasts.filter((toast) => toast.variant);
+  }
+  const duplicate = queuedToasts.find((toast) => sameToastKey(toast, options));
+  if (duplicate) {
+    duplicate.onDismiss?.("replaced");
+    queuedToasts = queuedToasts.filter((toast) => toast !== duplicate);
+  } else if (
+    options.variant &&
+    queuedToasts.filter((toast) => toast.variant).length >= TOAST_QUEUE_LIMIT
+  ) {
+    const active = queuedToasts.filter((toast) => toast.variant);
+    const victim = selectSaturationVictim(active, options);
+    if (!victim) {
+      options.onDismiss?.("saturated");
+      return;
+    }
+    victim.onDismiss?.("saturated");
+    queuedToasts = queuedToasts.filter((toast) => toast !== victim);
+  }
+  queuedToasts.push(options);
 }
 
 export function showToast(options: ToastOptions): boolean {
@@ -287,18 +444,7 @@ export function showToast(options: ToastOptions): boolean {
   }
   const host = document.querySelector<OpenClawToastHost>("openclaw-toast-host");
   if (!host) {
-    const duplicate = options.key
-      ? queuedToasts.findIndex((toast) => toast.key === options.key)
-      : -1;
-    if (duplicate >= 0) {
-      queuedToasts[duplicate]?.onDismiss?.("replaced");
-      queuedToasts[duplicate] = options;
-    } else {
-      if (queuedToasts.length >= TOAST_QUEUE_LIMIT) {
-        queuedToasts.shift()?.onDismiss?.("replaced");
-      }
-      queuedToasts.push(options);
-    }
+    queueToast(options);
     return false;
   }
   const modal = activeModalToastLayer();
@@ -315,11 +461,10 @@ export function showToast(options: ToastOptions): boolean {
     };
     modal.addEventListener("wa-after-hide", handoff);
   }
-  if (!modal && options.scope?.kind === "session") {
-    const sessionHost = matchingSessionToastHost(options.scope.sessionKey);
+  if (!modal && options.scope) {
+    const sessionHost = matchingSessionToastHost(options.scope);
     if (sessionHost) {
-      sessionHost.show(options);
-      return true;
+      return sessionHost.show(options);
     }
   }
   return presentGlobalToast(options, host);
@@ -329,11 +474,7 @@ function presentGlobalToast(
   options: ToastOptions,
   host = document.querySelector<OpenClawToastHost>("openclaw-toast-host"),
 ): boolean {
-  if (!host) {
-    return false;
-  }
-  host.show(options);
-  return true;
+  return host?.show(options) ?? false;
 }
 
 // Guarded so DOM-free (node) consumers of send-failure surfacing can load this module.

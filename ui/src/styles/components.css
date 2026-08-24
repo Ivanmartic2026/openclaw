@@ -791,6 +791,7 @@ openclaw-session-owner-chip {
 
 .app-toast[data-state="exiting"] {
   opacity: 0;
+  pointer-events: none;
   transform: translateX(16px);
   transition-duration: 150ms;
 }
@@ -834,6 +835,7 @@ openclaw-session-owner-chip {
 }
 
 .app-toast--anchored {
+  position: fixed;
   right: auto;
   left: var(--app-toast-anchor-center);
   top: var(--app-toast-anchor-top);
@@ -978,10 +980,15 @@ openclaw-session-owner-chip {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-toast,
+  .app-toast[data-state="exiting"] {
+    transition: none;
+  }
+
   .app-toast--anchored,
   .app-toast--anchored[data-active="true"],
   .app-toast--anchored[data-active="false"] {
-    transition: none;
+    transform: translateX(-50%);
   }
 }
 
