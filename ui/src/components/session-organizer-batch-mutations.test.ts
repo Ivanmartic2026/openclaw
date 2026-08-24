@@ -477,6 +477,7 @@ describe("session organizer destructive confirmations", () => {
 
   it("renders the localized batch-delete copy in-app and deletes once accepted", async () => {
     const harness = createHarness(destructiveHarness);
+    const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
     const rows = [sessionRow(0), sessionRow(1)];
     const retryError = `Session ${rows[0]!.key} changed before deletion. Retry.`;
     harness.deleteMany.mockResolvedValueOnce({
@@ -488,6 +489,12 @@ describe("session organizer destructive confirmations", () => {
           branch: "openclaw/busy",
           path: "/worktrees/busy",
           reason: "busy",
+        },
+        {
+          id: "wt-owner",
+          branch: "openclaw/owner",
+          path: "/worktrees/owner",
+          reason: "owner-mismatch",
         },
       ],
     });
@@ -516,11 +523,9 @@ describe("session organizer destructive confirmations", () => {
     ]);
     expect(harness.publishSessionMutationError).toHaveBeenCalledWith(harness.scope, retryError);
     expect(retryError).not.toContain("GatewayRequestError");
-    expect(showToast).toHaveBeenCalledWith({
-      key: "worktrees-preserved:wt-busy",
-      message: "Managed Worktrees:\nopenclaw/busy — live run or cleanup active",
-      variant: "warning",
-    });
+    expect(alertSpy).toHaveBeenCalledWith(
+      "Managed Worktrees:\nopenclaw/busy — live run or cleanup active\nopenclaw/owner — owned elsewhere",
+    );
   });
 
   it.each(destructiveOperations)("sends no $name request when cancelled", async (operation) => {

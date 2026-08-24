@@ -726,14 +726,7 @@ class SessionsPage extends OpenClawLightDomElement {
         return;
       }
       if (result.preservedWorktrees.length > 0) {
-        showToast({
-          key: `worktrees-preserved:${result.preservedWorktrees
-            .map((worktree) => worktree.id)
-            .toSorted()
-            .join(",")}`,
-          message: formatPreservedWorktreesNotice(result.preservedWorktrees),
-          variant: "warning",
-        });
+        window.alert(formatPreservedWorktreesNotice(result.preservedWorktrees));
       }
       if (result.deleted.length > 0) {
         const deleted = new Set(result.deleted);

@@ -334,14 +334,7 @@ export async function deleteSessionsBatch(
       }
     }
     if (result.preservedWorktrees.length > 0) {
-      showToast({
-        key: `worktrees-preserved:${result.preservedWorktrees
-          .map((worktree) => worktree.id)
-          .toSorted()
-          .join(",")}`,
-        message: formatPreservedWorktreesNotice(result.preservedWorktrees),
-        variant: "warning",
-      });
+      window.alert(formatPreservedWorktreesNotice(result.preservedWorktrees));
       if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
         return;
       }
@@ -665,11 +658,7 @@ export async function deleteSession(
         requiredScope: "operator.admin",
       });
       if (!removeAccess.allowed) {
-        showToast({
-          key: `worktree-preserved:${preserved.id}`,
-          message: formatPreservedWorktreesNotice([preserved]),
-          variant: "warning",
-        });
+        window.alert(formatPreservedWorktreesNotice([preserved]));
         if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
           return;
         }
