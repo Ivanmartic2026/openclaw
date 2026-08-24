@@ -128,6 +128,7 @@ export function applyConfigSnapshot(
     // banner: a saved-but-unapplied config still needs an apply even after
     // the local draft is thrown away.
     state.configAutoSaveStatus = "idle";
+    state.configAutoSaveError = null;
   }
   const currentRevisionHash = snapshot.configRevisionHash ?? snapshot.hash ?? null;
   if (snapshot.appliedConfigHash !== undefined) {
@@ -418,9 +419,10 @@ function resetStaleAutoSaveStatus(state: RuntimeConfigState) {
   }
   if (!state.configFormDirty && state.configAutoSaveStatus === "error") {
     state.lastError = null;
-    state.lastErrorSource = null;
+    state.configAutoSaveError = null;
   }
   state.configAutoSaveStatus = "idle";
+  state.configAutoSaveError = null;
 }
 
 function parseConfigRawDraft(raw: string): Record<string, unknown> | null {
@@ -485,9 +487,7 @@ function mutateConfigForm(
     if (!parsedRawDraft) {
       // Unparseable raw draft: refuse the form edit and tell the user to
       // resolve the raw buffer first; the raw draft stays authoritative.
-      state.configAutoSaveStatus = "error";
       state.lastError = t("configView.rawDraftBlocksFormEdit");
-      state.lastErrorSource = "mutation";
       return;
     }
     base = parsedRawDraft;

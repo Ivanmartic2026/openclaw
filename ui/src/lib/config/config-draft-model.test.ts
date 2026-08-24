@@ -720,7 +720,7 @@ describe("config draft model", () => {
     // The raw draft stays authoritative; the form edit is rejected loudly.
     expect(runtimeConfig.state.configRaw).toBe(brokenRaw);
     expect(runtimeConfig.state.configFormMode).toBe("raw");
-    expect(runtimeConfig.state.configAutoSaveStatus).toBe("error");
+    expect(runtimeConfig.state.configAutoSaveStatus).toBe("idle");
     expect(runtimeConfig.state.lastError).toContain("Raw editor");
     await vi.advanceTimersByTimeAsync(CONFIG_FORM_AUTO_SAVE_DEBOUNCE_MS * 2);
     expect(server.submissions).toHaveLength(0);
@@ -848,7 +848,7 @@ describe("config draft model", () => {
     // Raw stays explicit-save-only: nothing was written, the user is told to
     // resolve the raw draft first.
     expect(server.submissions).toHaveLength(0);
-    expect(runtimeConfig.state.configAutoSaveStatus).toBe("error");
+    expect(runtimeConfig.state.configAutoSaveStatus).toBe("idle");
     expect(runtimeConfig.state.lastError).toContain("Raw editor");
     runtimeConfig.dispose();
   });

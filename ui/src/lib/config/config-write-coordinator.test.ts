@@ -199,7 +199,6 @@ describe("config write coordinator", () => {
     expect(runtimeConfig.state.configFormDirty).toBe(true);
     expect(runtimeConfig.state.configNeedsApply).toBe(false);
     expect(runtimeConfig.state.lastError).toContain("disk full");
-    expect(runtimeConfig.state.lastErrorSource).toBe("save");
 
     // No retry loop; only the next edit reschedules a save.
     await vi.advanceTimersByTimeAsync(CONFIG_FORM_AUTO_SAVE_DEBOUNCE_MS * 10);
