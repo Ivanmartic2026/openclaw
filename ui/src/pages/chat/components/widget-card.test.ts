@@ -480,6 +480,91 @@ describe("widget-card", () => {
     );
     expect(missingView.querySelector("[data-pin-widget]")).toBeNull();
   });
+
+  it("keeps failures from distinct widget pins separate", async () => {
+    const toastHost = document.createElement("openclaw-toast-host");
+    document.body.append(toastHost);
+    const pinWidget = vi.fn(async () => {
+      throw new Error("pin failed");
+    });
+    const provider = {
+      sessionKey: "agent:main:main",
+      canPinWidgets: true,
+      pinWidget,
+      snapshot$: {
+        value: { sessionKey: "agent:main:main", revision: 0, tabs: [], widgets: [] },
+        subscribe: () => () => {},
+      },
+    } as unknown as BoardProvider;
+
+    for (const viewId of ["cv_first", "cv_second"]) {
+      const card = document.createElement("div");
+      document.body.append(card);
+      render(
+        renderToolPreview(
+          {
+            kind: "canvas",
+            surface: "assistant_message",
+            render: "url",
+            viewId,
+            url: `/__openclaw__/canvas/documents/${viewId}/index.html`,
+            sandbox: "scripts",
+          },
+          "chat_message",
+          { boardProvider: provider },
+        ),
+        card,
+      );
+      card.querySelector<HTMLButtonElement>("[data-pin-widget]")?.click();
+    }
+
+    await vi.waitFor(() => expect(pinWidget).toHaveBeenCalledTimes(2));
+    await toastHost.updateComplete;
+    expect(
+      [...toastHost.querySelectorAll(".app-toast")].map((toast) =>
+        toast.getAttribute("data-toast-key"),
+      ),
+    ).toEqual(["widget-pin:cv_first", "widget-pin:cv_second"]);
+    document.body.replaceChildren();
+  });
+
+  it("keeps failures from distinct widget exports separate", async () => {
+    const toastHost = document.createElement("openclaw-toast-host");
+    document.body.append(toastHost);
+
+    for (const viewId of ["cv_first", "cv_second"]) {
+      const card = document.createElement("div");
+      document.body.append(card);
+      render(
+        renderToolPreview(
+          {
+            kind: "canvas",
+            surface: "assistant_message",
+            render: "url",
+            viewId,
+            url: `/__openclaw__/canvas/documents/${viewId}/index.html`,
+            sandbox: "scripts",
+          },
+          "chat_message",
+        ),
+        card,
+      );
+      card.querySelector("iframe")?.remove();
+      card.querySelector("wa-dropdown")?.dispatchEvent(
+        new CustomEvent("wa-select", {
+          detail: { item: { value: "copy" } },
+        }),
+      );
+    }
+
+    await toastHost.updateComplete;
+    expect(
+      [...toastHost.querySelectorAll(".app-toast")].map((toast) =>
+        toast.getAttribute("data-toast-key"),
+      ),
+    ).toEqual(["widget-export:copy:cv_first", "widget-export:copy:cv_second"]);
+    document.body.replaceChildren();
+  });
 });
 
 describe("widget-card presentation", () => {

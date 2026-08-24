@@ -24,6 +24,7 @@ import {
   type EmbedSandboxMode,
 } from "../../../lib/chat/tool-display.ts";
 import { showToast } from "../../../lib/toast.ts";
+import type { ToastSessionScope } from "../../../lib/toast.ts";
 import { installWidgetThemeObserver, postWidgetTheme } from "../../../lib/widget-theme.ts";
 import type { SidebarContent } from "./chat-sidebar.ts";
 import { exportWidget } from "./widget-export.ts";
@@ -38,13 +39,19 @@ type WidgetCardOptions = {
   embedSandboxMode?: EmbedSandboxMode;
   allowExternalEmbedUrls?: boolean;
   sessionKey?: string;
+  toastScope?: ToastSessionScope;
   boardProvider?: BoardProvider;
 };
+
+function toastScope(options: WidgetCardOptions | undefined) {
+  return options?.toastScope ? { scope: options.toastScope } : {};
+}
 
 async function pinWidget(
   event: Event,
   pin: () => Promise<void>,
-  sessionKey: string | undefined,
+  options: WidgetCardOptions | undefined,
+  key: string,
 ): Promise<void> {
   const button = event.currentTarget;
   if (!(button instanceof HTMLButtonElement)) {
@@ -64,9 +71,9 @@ async function pinWidget(
     const failureLabel = t("chat.toolCards.pinToDashboardFailed");
     button.title = failureLabel;
     showToast({
-      key: "widget-pin",
+      key,
       message: failureLabel,
-      ...(sessionKey ? { scope: { kind: "session", sessionKey } as const } : {}),
+      ...toastScope(options),
       variant: "danger",
     });
   }
@@ -77,7 +84,7 @@ async function pinCanvasWidget(
   preview: ToolPreview,
   provider: BoardProvider,
   name: string,
-  sessionKey: string | undefined,
+  options: WidgetCardOptions | undefined,
 ): Promise<void> {
   const docId = preview.viewId?.trim();
   if (!docId) {
@@ -91,7 +98,8 @@ async function pinCanvasWidget(
         name,
         ...(preview.title?.trim() ? { title: preview.title.trim() } : {}),
       }),
-    sessionKey,
+    options,
+    `widget-pin:${docId}`,
   );
 }
 
@@ -101,7 +109,7 @@ async function pinMcpAppWidget(
   provider: BoardProvider,
   name: string,
   viewId: string,
-  sessionKey: string | undefined,
+  options: WidgetCardOptions | undefined,
 ): Promise<void> {
   return pinWidget(
     event,
@@ -111,7 +119,8 @@ async function pinMcpAppWidget(
         name,
         ...(preview.title?.trim() ? { title: preview.title.trim() } : {}),
       }),
-    sessionKey,
+    options,
+    `widget-pin:${viewId}`,
   );
 }
 
@@ -440,14 +449,16 @@ function renderWidgetContent(
 
 function handleWidgetExportAction(
   event: CustomEvent<{ item: { value?: string } }>,
+  preview: ToolPreview,
   title: string | undefined,
-  sessionKey: string | undefined,
+  options: WidgetCardOptions | undefined,
 ) {
+  const widgetId = preview.mcpApp?.viewId?.trim() || preview.viewId?.trim() || preview.url?.trim();
   const present = (key: string, message: string, variant: "danger" | "success" | "warning") =>
     showToast({
       key,
       message,
-      ...(sessionKey ? { scope: { kind: "session", sessionKey } as const } : {}),
+      ...toastScope(options),
       variant,
     });
   const value = event.detail.item.value;
@@ -473,6 +484,7 @@ function handleWidgetExportAction(
   if (value !== "copy" && value !== "download") {
     return;
   }
+  const toastKey = `widget-export:${value}:${widgetId ?? "unknown"}`;
   const dropdown = event.currentTarget;
   const frame =
     dropdown instanceof HTMLElement
@@ -481,28 +493,28 @@ function handleWidgetExportAction(
           ?.querySelector<HTMLIFrameElement>(".chat-tool-card__preview-frame")
       : null;
   if (!frame) {
-    present("widget-export", t("chat.toolCards.widgetExportFailed"), "danger");
+    present(toastKey, t("chat.toolCards.widgetExportFailed"), "danger");
     return;
   }
   void exportWidget(value, frame, title)
     .then((result) => {
       if (result === "rerender-required") {
-        present("widget-export", t("chat.toolCards.widgetExportRerender"), "warning");
+        present(toastKey, t("chat.toolCards.widgetExportRerender"), "warning");
       } else if (result === "html") {
-        present("widget-export", t("chat.toolCards.widgetExportHtmlFallback"), "warning");
+        present(toastKey, t("chat.toolCards.widgetExportHtmlFallback"), "warning");
       } else if (value === "copy") {
-        present("widget-export", t("common.copied"), "success");
+        present(toastKey, t("common.copied"), "success");
       }
     })
     .catch(() => {
-      present("widget-export", t("chat.toolCards.widgetExportFailed"), "danger");
+      present(toastKey, t("chat.toolCards.widgetExportFailed"), "danger");
     });
 }
 
 function renderWidgetActions(
   preview: ToolPreview,
   hasRawDetails: boolean,
-  sessionKey: string | undefined,
+  options: WidgetCardOptions | undefined,
 ) {
   const canExportImage = !preview.mcpApp && isInternalCanvasEntryUrl(preview.url);
   if (!canExportImage && !hasRawDetails) {
@@ -514,7 +526,7 @@ function renderWidgetActions(
       placement="bottom-end"
       aria-label=${t("chat.toolCards.widgetActions")}
       @wa-select=${(event: CustomEvent<{ item: { value?: string } }>) =>
-        handleWidgetExportAction(event, preview.title, sessionKey)}
+        handleWidgetExportAction(event, preview, preview.title, options)}
     >
       <button
         slot="trigger"
@@ -602,24 +614,13 @@ function renderWidgetCard(
           aria-label=${pinLabel}
           @click=${(event: Event) =>
             contentKind === "mcp-app" && mcpAppViewId
-              ? void pinMcpAppWidget(
-                  event,
-                  preview,
-                  provider,
-                  pinName,
-                  mcpAppViewId,
-                  options?.sessionKey,
-                )
-              : void pinCanvasWidget(event, preview, provider, pinName, options?.sessionKey)}
+              ? void pinMcpAppWidget(event, preview, provider, pinName, mcpAppViewId, options)
+              : void pinCanvasWidget(event, preview, provider, pinName, options)}
         >
           ${icons.pin}
         </button>`
       : nothing;
-  const widgetActions = renderWidgetActions(
-    preview,
-    Boolean(options?.rawText),
-    options?.sessionKey,
-  );
+  const widgetActions = renderWidgetActions(preview, Boolean(options?.rawText), options);
   const actions =
     pinAction === nothing && widgetActions === nothing
       ? nothing
