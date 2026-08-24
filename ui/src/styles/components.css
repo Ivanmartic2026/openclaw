@@ -719,33 +719,26 @@ openclaw-session-owner-chip {
 /* Global outcomes stay peripheral on wide layouts and stack without hiding
  * independent events. Session outcomes remain in the owning pane below its topbar. */
 .app-toast-stack {
-  z-index: var(--z-toast);
   display: flex;
   gap: 8px;
   pointer-events: none;
 }
 
-.app-toast-stack--global {
+.app-toast-stack--global,
+.app-toast-stack--legacy {
+  z-index: var(--z-toast);
   position: fixed;
   right: calc(20px + var(--safe-area-right));
+}
+
+.app-toast-stack--global {
   bottom: calc(20px + var(--safe-area-bottom));
-  flex-direction: column;
   align-items: flex-end;
+  flex-direction: column;
 }
 
 .app-toast-stack--legacy {
-  position: fixed;
   top: calc(20px + var(--safe-area-top));
-  right: calc(20px + var(--safe-area-right));
-}
-
-.app-toast-stack--session {
-  position: relative;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  width: 100%;
-  padding: 8px 16px 0;
 }
 
 .app-toast {
@@ -755,25 +748,15 @@ openclaw-session-owner-chip {
   gap: var(--space-3);
   max-width: min(520px, calc(100vw - 32px));
   padding: 10px 12px 10px 16px;
-  border: 1px solid color-mix(in srgb, var(--toast-tone) 34%, var(--border));
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--toast-tone) 14%, var(--popover)) 0%,
-    color-mix(in srgb, var(--toast-tone) 8%, var(--popover)) 100%
-  );
-  color: color-mix(in srgb, var(--toast-tone) 82%, var(--text-strong));
+  background: var(--popover);
+  color: var(--text-strong);
   box-shadow: var(--shadow-lg);
-  pointer-events: none;
-  opacity: 1;
-  transform: translateX(0);
-  transition:
-    opacity 200ms var(--ease-out),
-    transform 200ms var(--ease-out);
+  transition: opacity 200ms var(--ease-out);
 
   @starting-style {
     opacity: 0;
-    transform: translateX(16px);
   }
 }
 
@@ -782,17 +765,11 @@ openclaw-session-owner-chip {
   background: var(--popover);
   color: var(--popover-foreground);
   transition: none;
-
-  @starting-style {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .app-toast[data-state="exiting"] {
   opacity: 0;
   pointer-events: none;
-  transform: translateX(16px);
   transition-duration: 150ms;
 }
 
@@ -808,35 +785,14 @@ openclaw-session-owner-chip {
   --toast-tone: var(--danger);
 }
 
-.app-toast--session {
-  min-height: 38px;
-  max-width: min(520px, calc(100% - 32px));
-  padding: 6px 8px 6px 12px;
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-  transform: translateY(0);
-
-  @starting-style {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-
-.app-toast--session[data-state="exiting"] {
-  transform: translateY(-8px);
-}
-
 .app-toast__indicator {
-  flex: 0 0 auto;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: currentColor;
+  background: var(--toast-tone);
 }
 
 .app-toast--anchored {
   position: fixed;
-  right: auto;
   left: var(--app-toast-anchor-center);
   top: var(--app-toast-anchor-top);
   transform: translateX(-50%);
@@ -851,27 +807,22 @@ openclaw-session-owner-chip {
 
 .app-toast--anchored[data-active="true"] {
   translate: 0 0;
-  scale: 1;
   opacity: 1;
   transition-duration: 200ms;
-  transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @starting-style {
   .app-toast--anchored[data-active="true"] {
     translate: 0 -100%;
-    scale: 0.95;
     opacity: 0;
   }
 }
 
 .app-toast--anchored[data-active="false"] {
   translate: 0 -100%;
-  scale: 0.95;
   opacity: 0;
   pointer-events: none;
   transition-duration: 400ms;
-  transition-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 .app-toast__icon {
@@ -894,40 +845,25 @@ openclaw-session-owner-chip {
   .app-toast {
     max-width: none;
     width: 100%;
-    transform: translateY(0);
+  }
 
-    @starting-style {
-      opacity: 0;
-      transform: translateY(-100%);
-    }
+  .app-toast-stack--global,
+  .app-toast-stack--legacy {
+    right: max(12px, var(--safe-area-right));
+    left: max(12px, var(--safe-area-left));
   }
 
   .app-toast-stack--global {
     top: calc(12px + var(--safe-area-top));
-    right: max(12px, var(--safe-area-right));
     bottom: auto;
-    left: max(12px, var(--safe-area-left));
     align-items: stretch;
   }
 
   .app-toast-stack--legacy {
     top: calc(20px + var(--safe-area-top));
-    right: max(12px, var(--safe-area-right));
-    left: max(12px, var(--safe-area-left));
-  }
-
-  .app-toast--global[data-state="exiting"] {
-    transform: translateY(-100%);
-  }
-
-  .app-toast--session {
-    width: auto;
-    max-width: calc(100% - 24px);
   }
 
   .app-toast--anchored {
-    left: var(--app-toast-anchor-center);
-    right: auto;
     max-width: calc(var(--app-toast-anchor-width) - 24px);
   }
 }
@@ -975,8 +911,6 @@ openclaw-session-owner-chip {
   place-items: center;
   border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 20px;
-  line-height: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

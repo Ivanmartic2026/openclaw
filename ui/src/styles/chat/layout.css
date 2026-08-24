@@ -6095,3 +6095,23 @@ button.chat-pr__diff {
 
 /* Mobile dropdown toggle — hidden on desktop */
 /* Mobile gear toggle + dropdown are hidden by default in layout.css */
+/* Session outcomes stay in the owning pane below its topbar. */
+.app-toast-stack--session {
+  align-items: center;
+  flex-direction: column;
+  width: 100%;
+  padding: 8px 16px 0;
+}
+
+.app-toast--session {
+  max-width: min(520px, calc(100% - 32px));
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+}
+
+@media (max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  .app-toast--session {
+    width: auto;
+    max-width: calc(100% - 24px);
+  }
+}
