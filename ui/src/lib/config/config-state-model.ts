@@ -8,7 +8,7 @@ import type { ApplicationGatewayPhase } from "../../app/gateway.ts";
 import { normalizeAgentId } from "../sessions/session-key.ts";
 
 export type ConfigAutoSaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "paused";
-export type ConfigErrorOwner = "page" | "save-indicator";
+type ConfigErrorOwner = "page" | "save-indicator";
 export type RuntimeConfigState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
