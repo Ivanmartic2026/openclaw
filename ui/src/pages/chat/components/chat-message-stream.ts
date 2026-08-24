@@ -86,6 +86,7 @@ export function renderStreamGroupParts(
               isStreaming: part.isStreaming,
               showReasoning: false,
               sessionKey: opts.sessionKey,
+              toastScope: opts.toastScope,
               boardProvider: opts.boardProvider,
               agentId: opts.agentId,
               runActive: opts.runActive,

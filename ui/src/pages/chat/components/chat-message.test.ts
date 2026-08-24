@@ -1687,6 +1687,53 @@ describe("grouped chat rendering", () => {
     expect(text?.textContent).toBe("**live**\nreply");
   });
 
+  it("keeps pane toast scope on streamed canvas widgets", async () => {
+    const container = document.createElement("div");
+    const globalHost = document.createElement("openclaw-toast-host");
+    const sessionHost = document.createElement("openclaw-session-toast-host");
+    sessionHost.sessionKey = "agent:main:main";
+    sessionHost.agentId = "main";
+    sessionHost.presentationId = "pane-stream";
+    sessionHost.presented = true;
+    document.body.append(globalHost, sessionHost);
+    await sessionHost.updateComplete;
+    render(
+      renderStreamGroup(
+        [
+          {
+            kind: "stream",
+            key: "stream:canvas",
+            text: '[embed ref="cv_stream" title="Stream" /]',
+            startedAt: 1,
+            isStreaming: true,
+          },
+        ],
+        {
+          sessionKey: "agent:main:main",
+          agentId: "main",
+          toastScope: {
+            kind: "session",
+            sessionKey: "agent:main:main",
+            agentId: "main",
+            presentationId: "pane-stream",
+          },
+        },
+      ),
+      container,
+    );
+
+    container.querySelector("iframe")?.remove();
+    container
+      .querySelector("wa-dropdown")
+      ?.dispatchEvent(new CustomEvent("wa-select", { detail: { item: { value: "copy" } } }));
+    await sessionHost.updateComplete;
+
+    expect(sessionHost.textContent).toContain("Widget export failed");
+    expect(globalHost.querySelector(".app-toast")).toBeNull();
+    globalHost.remove();
+    sessionHost.remove();
+  });
+
   it("renders a reading-indicator-only run without avatar or footer", () => {
     const container = document.createElement("div");
 
