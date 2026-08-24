@@ -476,6 +476,7 @@ suite.define(() => {
 
       const catalog = drawer.locator('[data-session-section="catalog:codex"]');
       await catalog.waitFor({ state: "visible" });
+      await page.emulateMedia({ reducedMotion: "reduce" });
       await catalog.locator(".sidebar-recent-sessions__head").hover();
       await catalog.locator('[data-session-catalog-view-menu="codex"]').click();
       await page
@@ -492,6 +493,12 @@ suite.define(() => {
         throw new Error("expected the drawer toast to have a layout box");
       }
       expect(Math.round(drawerToastBounds.y)).toBe(12);
+      expect(
+        await toast.evaluate((element) =>
+          Number.parseFloat(getComputedStyle(element).transitionDuration),
+        ),
+      ).toBeLessThan(0.001);
+      await page.emulateMedia({ reducedMotion: "no-preference" });
 
       await page.screenshot({
         animations: "disabled",
