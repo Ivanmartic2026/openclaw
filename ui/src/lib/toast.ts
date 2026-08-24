@@ -56,6 +56,7 @@ type ToastEntry = ToastOptions & {
   id: number;
   exiting: boolean;
 };
+type VariantToast = ToastOptions & { variant: ToastVariant };
 
 let nextToastId = 0;
 
@@ -69,9 +70,21 @@ function prefersReducedMotion(): boolean {
   return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
-function toastPriority(toast: Pick<ToastOptions, "actionLabel" | "onAction" | "variant">): number {
-  const severity = toast.variant ? TOAST_PRIORITY[toast.variant] : 0;
-  return severity * 2 + Number(Boolean(toast.actionLabel && toast.onAction));
+function isVariantToast(toast: ToastOptions): toast is VariantToast {
+  return toast.variant !== undefined;
+}
+
+function variantToast(options: ToastOptions): VariantToast {
+  if (!isVariantToast(options)) {
+    throw new Error("variant toast required");
+  }
+  return options;
+}
+
+function compareToastPriority(left: VariantToast, right: VariantToast): number {
+  const actionable = (toast: ToastOptions) => Number(Boolean(toast.actionLabel && toast.onAction));
+  const actionPriority = actionable(left) - actionable(right);
+  return actionPriority || TOAST_PRIORITY[left.variant] - TOAST_PRIORITY[right.variant];
 }
 
 function sameToastKey(left: ToastOptions, right: ToastOptions): boolean {
@@ -88,12 +101,12 @@ function sameToastKey(left: ToastOptions, right: ToastOptions): boolean {
   );
 }
 
-function selectSaturationVictim<T extends ToastOptions>(
+function selectSaturationVictim<T extends VariantToast>(
   active: T[],
-  incoming: ToastOptions,
+  incoming: VariantToast,
 ): T | null {
-  const candidate = active.toSorted((left, right) => toastPriority(left) - toastPriority(right))[0];
-  return candidate && toastPriority(incoming) >= toastPriority(candidate) ? candidate : null;
+  const candidate = active.toSorted(compareToastPriority)[0];
+  return candidate && compareToastPriority(incoming, candidate) >= 0 ? candidate : null;
 }
 
 // Startup outcomes can race the shell host. Admission applies the same replacement
@@ -128,9 +141,11 @@ abstract class OpenClawToastStackHost extends OpenClawLightDomContentsElement {
     if (duplicate) {
       this.settle(duplicate, "replaced", false);
     } else if (options.variant) {
-      const active = this.toasts.filter((toast) => !toast.exiting && toast.variant);
+      const active = this.toasts.filter(
+        (toast): toast is ToastEntry & VariantToast => !toast.exiting && isVariantToast(toast),
+      );
       if (active.length >= TOAST_QUEUE_LIMIT) {
-        const victim = selectSaturationVictim(active, options);
+        const victim = selectSaturationVictim(active, variantToast(options));
         if (!victim) {
           options.onDismiss?.("saturated");
           return false;
@@ -426,8 +441,8 @@ function queueToast(options: ToastOptions): void {
     options.variant &&
     queuedToasts.filter((toast) => toast.variant).length >= TOAST_QUEUE_LIMIT
   ) {
-    const active = queuedToasts.filter((toast) => toast.variant);
-    const victim = selectSaturationVictim(active, options);
+    const active = queuedToasts.filter(isVariantToast);
+    const victim = selectSaturationVictim(active, variantToast(options));
     if (!victim) {
       options.onDismiss?.("saturated");
       return;

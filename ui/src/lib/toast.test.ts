@@ -84,6 +84,46 @@ describe("shared toast", () => {
     ).toEqual(["Second", "Third", "Fourth"]);
   });
 
+  it("preserves an action when passive outcomes saturate the stack", async () => {
+    const host = await mountGlobalHost();
+    const onAction = vi.fn();
+    showToast({
+      key: "archive",
+      message: "Archived",
+      actionLabel: "Undo",
+      onAction,
+      variant: "success",
+    });
+    for (const message of ["First info", "Second info", "Third info"]) {
+      present(message);
+    }
+    await host.updateComplete;
+
+    expect(host.querySelector('[data-toast-key="archive"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("First info");
+    host.querySelector<HTMLButtonElement>('[data-toast-key="archive"] .app-toast__action')?.click();
+    expect(onAction).toHaveBeenCalledOnce();
+  });
+
+  it("admits an action ahead of passive danger outcomes", async () => {
+    const host = await mountGlobalHost();
+    for (const message of ["First danger", "Second danger", "Third danger"]) {
+      present(message, message, "danger");
+    }
+
+    showToast({
+      key: "archive",
+      message: "Archived",
+      actionLabel: "Undo",
+      onAction: vi.fn(),
+      variant: "success",
+    });
+    await host.updateComplete;
+
+    expect(host.querySelector('[data-toast-key="archive"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("First danger");
+  });
+
   it("replaces an outcome with the same scoped key", async () => {
     const host = await mountGlobalHost();
     const reasons: string[] = [];
