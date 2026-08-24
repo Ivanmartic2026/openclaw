@@ -65,6 +65,7 @@ export type ChatThreadProps = {
   /** Routing for peer sender names in a shared session. */
   personActivity?: PersonActivityRouting;
   sessionKey: string;
+  currentAgentId?: string;
   boardProvider?: BoardProvider;
   announceTranscript?: boolean;
   loading: boolean;

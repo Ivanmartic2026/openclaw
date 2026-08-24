@@ -182,9 +182,14 @@ export class ChatPane extends ChatPaneLayoutRender {
       ? (card: NonNullable<ChatProps["progressCard"]>) => {
           void this.progressCard.dismiss(card).catch(() =>
             showToast({
-              key: `progress-card-dismiss:${state.sessionKey}`,
+              key: "progress-card-dismiss",
               message: t("sessionProgressCard.dismissFailed"),
-              scope: { kind: "session", sessionKey: state.sessionKey },
+              scope: {
+                kind: "session",
+                sessionKey: state.sessionKey,
+                agentId: currentAgentId,
+                presentationId: this.presentationId,
+              },
               variant: "danger",
             }),
           );

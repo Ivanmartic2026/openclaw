@@ -100,7 +100,7 @@ export function showCriticalSessionObserverNotice(params: {
   );
   const label = resolveSessionDisplayName(sessionKey, row);
   showToast({
-    key: `critical-observer:${sessionKey}`,
+    key: `critical-observer:${digest.agentId ?? "unknown"}:${sessionKey}`,
     message: `${t("sessionsView.attentionRequired")}: ${label} — ${headline}`,
     actionLabel: t("sessionsView.openSession"),
     onAction: () =>

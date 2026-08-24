@@ -31,6 +31,7 @@ import {
 } from "../../../lib/chat/tool-cards.ts";
 import type { EmbedSandboxMode } from "../../../lib/chat/tool-display.ts";
 import { resolveToolDisplay } from "../../../lib/chat/tool-display.ts";
+import type { ToastSessionScope } from "../../../lib/toast.ts";
 import type { LinkFaviconFetcher } from "../link-favicon-loader.ts";
 import { workspaceResultConflictFromTranscript } from "../workspace-conflict.ts";
 import { renderAssistantAttachments } from "./chat-message-attachments.ts";
@@ -214,6 +215,7 @@ export function renderGroupedMessage(
   opts: {
     isStreaming: boolean;
     sessionKey?: string;
+    toastScope?: ToastSessionScope;
     boardProvider?: BoardProvider;
     agentId?: string;
     duplicateCount?: number;
@@ -268,6 +270,7 @@ export function renderGroupedMessage(
   const hasToolCards = toolCards.length > 0;
   const imageRenderOptions = {
     sessionKey: opts.sessionKey,
+    toastScope: opts.toastScope,
     localMediaPreviewRoots: opts.localMediaPreviewRoots ?? [],
     resourceBasePath: opts.resourceBasePath,
     authToken: opts.assistantAttachmentAuthToken,
@@ -391,6 +394,7 @@ export function renderGroupedMessage(
               boardProvider: opts.boardProvider,
               embedSandboxMode: opts.embedSandboxMode ?? "scripts",
               sessionKey: opts.sessionKey,
+              toastScope: opts.toastScope,
             })}
             ${block.rawText
               ? html`<div class="chat-tool-card__widget-raw">

@@ -84,6 +84,8 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
     );
     const sessionToasts = renderSessionToastHost({
       sessionKey: state.sessionKey,
+      agentId: currentAgentId,
+      presentationId: this.presentationId,
       presented: this.presented,
       active: this.active,
     });

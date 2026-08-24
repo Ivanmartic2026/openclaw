@@ -7,6 +7,7 @@ import {
   getMediaFileExtension,
   hasVideoMediaFileExtension,
 } from "../../../lib/media-file-extension.ts";
+import type { ToastSessionScope } from "../../../lib/toast.ts";
 
 export type PairingQrExpiryNotice = {
   title: string;
@@ -29,6 +30,7 @@ export type ArtifactDownloadResolver = (params: {
 
 export type ImageRenderOptions = {
   sessionKey?: string;
+  toastScope?: ToastSessionScope;
   localMediaPreviewRoots?: readonly string[];
   resourceBasePath?: string;
   authToken?: string | null;

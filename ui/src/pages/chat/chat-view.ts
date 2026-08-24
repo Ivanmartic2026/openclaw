@@ -314,6 +314,7 @@ export function renderChat(props: ChatProps) {
     {
       paneId: props.paneId,
       sessionKey: props.sessionKey,
+      currentAgentId: props.currentAgentId,
       announceTranscript: props.announceTranscript,
       loading: props.loading,
       historyLoading: props.historyPagination?.loading,

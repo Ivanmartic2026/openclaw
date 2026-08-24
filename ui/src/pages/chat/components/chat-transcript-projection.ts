@@ -286,6 +286,16 @@ export function projectChatTranscript(
     sessionKey: props.sessionKey,
     boardProvider: props.boardProvider,
     agentId: props.fullMessageAgentId,
+    ...(props.currentAgentId
+      ? {
+          toastScope: {
+            kind: "session" as const,
+            sessionKey: props.sessionKey,
+            agentId: props.currentAgentId,
+            presentationId: props.paneId,
+          },
+        }
+      : {}),
     runActive: props.runActive,
     onOpenWorkspaceFile: props.onOpenWorkspaceFile,
     onRequestUpdate: requestUpdate,

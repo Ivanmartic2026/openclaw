@@ -22,6 +22,7 @@ import { extractToolCardsCached } from "../../../lib/chat/tool-cards.ts";
 import type { EmbedSandboxMode } from "../../../lib/chat/tool-display.ts";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import { resolveIdentityHue } from "../../../lib/identity-avatar.ts";
+import type { ToastSessionScope } from "../../../lib/toast.ts";
 import { renderChatAvatar } from "../chat-avatar.ts";
 import type { TurnRecap } from "../chat-progress.ts";
 import {
@@ -69,6 +70,7 @@ type RenderMessageGroupOptions = {
   onOpenSidebar?: (content: SidebarContent) => void;
   onOpenWorkspaceFile?: (target: { path: string; line?: number | null }) => void;
   sessionKey?: string;
+  toastScope?: ToastSessionScope;
   boardProvider?: BoardProvider;
   agentId?: string;
   showReasoning: boolean;
@@ -155,6 +157,7 @@ function buildGroupedMessageRenderOptions(
   return {
     isStreaming: group.isStreaming && index === group.messages.length - 1,
     sessionKey: opts.sessionKey,
+    toastScope: opts.toastScope,
     boardProvider: opts.boardProvider,
     agentId: opts.agentId,
     entryId: persistedMessageEntryId(item.message) ?? undefined,

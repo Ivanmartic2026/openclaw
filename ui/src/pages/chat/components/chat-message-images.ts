@@ -47,9 +47,7 @@ function showImageToast(
   showToast({
     key,
     message,
-    ...(options?.sessionKey
-      ? { scope: { kind: "session" as const, sessionKey: options.sessionKey } }
-      : {}),
+    ...(options?.toastScope ? { scope: options.toastScope } : {}),
     variant,
   });
 }

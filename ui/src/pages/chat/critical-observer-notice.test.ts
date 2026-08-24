@@ -132,4 +132,36 @@ describe("critical session observer notice", () => {
     await toastHost.updateComplete;
     expect(toastHost.querySelector(".app-toast")).not.toBeNull();
   });
+
+  it("keeps global-session notices from different agents independent", async () => {
+    const toastHost = document.createElement("openclaw-toast-host");
+    document.body.append(toastHost);
+    const params = {
+      selectedSessionKey: "agent:main:selected",
+      sessionHost: {},
+      sessions: [],
+      tracker: new CriticalObserverNoticeTracker(),
+      onOpen: vi.fn(),
+    };
+
+    for (const agentId of ["alpha", "beta"]) {
+      showCriticalSessionObserverNotice({
+        ...params,
+        payload: {
+          sessionKey: "global",
+          agentId,
+          headline: `${agentId} needs attention`,
+          health: "stuck",
+          revision: 1,
+        },
+      });
+    }
+    await toastHost.updateComplete;
+
+    expect(
+      [...toastHost.querySelectorAll(".app-toast")].map((toast) =>
+        toast.getAttribute("data-toast-key"),
+      ),
+    ).toEqual(["critical-observer:alpha:global", "critical-observer:beta:global"]);
+  });
 });

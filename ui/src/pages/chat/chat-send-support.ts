@@ -148,7 +148,7 @@ export function surfaceChatDeliveryFailure(
         (session.agentId !== undefined && normalizeAgentId(session.agentId) === scopedAgentId)),
   );
   showToast({
-    key: `chat-delivery:${sessionKey}`,
+    key: `chat-delivery:${scopedAgentId ?? "unknown"}:${sessionKey}`,
     message: `${resolveSessionDisplayName(sessionKey, row)}: ${message}`,
     variant: "danger",
   });
