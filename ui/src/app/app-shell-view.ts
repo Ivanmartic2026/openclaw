@@ -423,7 +423,8 @@ export function renderApplicationShell(host: ShellViewHost) {
         preloadTimers: host.settingsPreloadTimers,
         saveIndicator: {
           status: runtimeConfig.configAutoSaveStatus,
-          lastError: runtimeConfig.configAutoSaveError,
+          lastError:
+            runtimeConfig.lastErrorOwner === "save-indicator" ? runtimeConfig.lastError : null,
           needsApply: runtimeConfig.configNeedsApply,
           applying: runtimeConfig.configApplying,
           applyDisabled:

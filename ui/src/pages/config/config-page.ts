@@ -1477,7 +1477,7 @@ export class ConfigPage extends OpenClawLightDomElement {
               </div>
             </section>
           `}
-      ${configState.lastError && configState.lastError !== configState.configAutoSaveError
+      ${configState.lastError && configState.lastErrorOwner !== "save-indicator"
         ? html`<div class="config-content-callout">
             <div class="callout danger" role="alert">${configState.lastError}</div>
           </div>`

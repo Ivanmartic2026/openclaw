@@ -265,10 +265,12 @@ class ChannelsPage extends OpenClawLightDomElement {
     }
     const saved = await context.runtimeConfig.save();
     const saveError = context.runtimeConfig.state.lastError;
+    const saveErrorOwner = context.runtimeConfig.state.lastErrorOwner;
     if (!saved) {
       await context.runtimeConfig.refresh();
       if (saveError && !context.runtimeConfig.state.lastError) {
         context.runtimeConfig.state.lastError = saveError;
+        context.runtimeConfig.state.lastErrorOwner = saveErrorOwner;
       }
       this.requestUpdate();
       return;

@@ -21,6 +21,7 @@ import { parseJson5Text, warmJson5 } from "../json5-runtime.ts";
 import {
   resolveAgentConfigEntryTarget,
   resolveEditableSnapshotConfig,
+  setConfigError,
   type LoadConfigOptions,
   type RuntimeConfigState,
 } from "./config-state-model.ts";
@@ -128,7 +129,6 @@ export function applyConfigSnapshot(
     // banner: a saved-but-unapplied config still needs an apply even after
     // the local draft is thrown away.
     state.configAutoSaveStatus = "idle";
-    state.configAutoSaveError = null;
   }
   const currentRevisionHash = snapshot.configRevisionHash ?? snapshot.hash ?? null;
   if (snapshot.appliedConfigHash !== undefined) {
@@ -418,11 +418,9 @@ function resetStaleAutoSaveStatus(state: RuntimeConfigState) {
     return;
   }
   if (!state.configFormDirty && state.configAutoSaveStatus === "error") {
-    state.lastError = null;
-    state.configAutoSaveError = null;
+    setConfigError(state, null, null);
   }
   state.configAutoSaveStatus = "idle";
-  state.configAutoSaveError = null;
 }
 
 function parseConfigRawDraft(raw: string): Record<string, unknown> | null {
@@ -487,7 +485,7 @@ function mutateConfigForm(
     if (!parsedRawDraft) {
       // Unparseable raw draft: refuse the form edit and tell the user to
       // resolve the raw buffer first; the raw draft stays authoritative.
-      state.lastError = t("configView.rawDraftBlocksFormEdit");
+      setConfigError(state, t("configView.rawDraftBlocksFormEdit"), "page");
       return;
     }
     base = parsedRawDraft;

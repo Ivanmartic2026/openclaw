@@ -33,6 +33,7 @@ import {
   isCurrentConfigConnection,
   nextRequestVersion,
   resolveEditableSnapshotConfig,
+  setConfigError,
   type RuntimeConfigGateway,
   type RuntimeConfigState,
 } from "./config-state-model.ts";
@@ -100,7 +101,7 @@ export function createConfigWriteCoordinator({
   const canDispatchConfigMutation = (method: ConfigMethod): boolean => {
     const allowed = canCallConfigMethod(method);
     if (!allowed && state.connected) {
-      state.lastError = t("configView.adminRequired");
+      setConfigError(state, t("configView.adminRequired"), "page");
       publish();
     }
     return allowed;
@@ -110,7 +111,6 @@ export function createConfigWriteCoordinator({
     autoSaveRequiresExplicitSubmit = false;
     if (state.configAutoSaveStatus === "paused") {
       state.configAutoSaveStatus = "idle";
-      state.configAutoSaveError = null;
     }
   };
   const captureAutoSaveDraftConnection = () => {
@@ -140,7 +140,6 @@ export function createConfigWriteCoordinator({
     autoSaveRequiresExplicitSubmit = false;
     if (state.configAutoSaveStatus === "paused") {
       state.configAutoSaveStatus = "idle";
-      state.configAutoSaveError = null;
     }
   };
   const canAutoSaveDraftOnCurrentConnection = () =>
@@ -432,7 +431,6 @@ export function createConfigWriteCoordinator({
       state.configSaving = state.configApplying = false;
       if (state.configAutoSaveStatus === "saving") {
         state.configAutoSaveStatus = "idle";
-        state.configAutoSaveError = null;
       }
       if (state.connected && state.client) {
         if (hasInterruptedWrite) {
@@ -520,7 +518,7 @@ export function createConfigWriteCoordinator({
         try {
           const resolved = resolveOptions();
           if ("error" in resolved) {
-            state.lastError = resolved.error;
+            setConfigError(state, resolved.error, "page");
             return false;
           }
           return await patchConfig(state, resolved.options, async (ack, snapshotAtDispatch) => {
@@ -605,8 +603,7 @@ export function createConfigWriteCoordinator({
         // connected reload clears conflict (same invariant as elsewhere).
         if (state.configAutoSaveStatus !== "conflict") {
           state.configAutoSaveStatus = "idle";
-          state.configAutoSaveError = null;
-          state.lastError = null;
+          setConfigError(state, null, null);
         }
       });
       clearAutoSaveDraftConnection();
@@ -675,7 +672,7 @@ export function createConfigWriteCoordinator({
               // dirty here was never reviewed-saved — applying would implicitly
               // write unreviewed raw text, so refuse and point at the Raw editor.
               if (state.configFormDirty && state.configFormMode === "raw") {
-                state.lastError = t("configView.rawDraftBlocksApply");
+                setConfigError(state, t("configView.rawDraftBlocksApply"), "page");
                 reconcileAppliedRefresh();
                 return false;
               }
